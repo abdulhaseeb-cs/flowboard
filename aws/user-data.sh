@@ -35,7 +35,7 @@ BX_ARCH=$([ "$ARCH" = "aarch64" ] && echo arm64 || echo amd64)
 PLUGINS=/usr/local/lib/docker/cli-plugins
 mkdir -p "$PLUGINS"
 curl -fsSL "https://github.com/docker/compose/releases/latest/download/docker-compose-linux-${ARCH}" -o "$PLUGINS/docker-compose"
-BUILDX_VER=$(curl -fsSL https://api.github.com/repos/docker/buildx/releases/latest | grep -m1 '"tag_name"' | cut -d'"' -f4)
+BUILDX_VER="v0.38.1"
 curl -fsSL "https://github.com/docker/buildx/releases/download/${BUILDX_VER}/buildx-${BUILDX_VER}.linux-${BX_ARCH}" -o "$PLUGINS/docker-buildx"
 chmod +x "$PLUGINS"/docker-*
 docker compose version
