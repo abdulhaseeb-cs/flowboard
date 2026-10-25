@@ -9,7 +9,7 @@
 # JWT_SECRET must be IDENTICAL on every instance (a token signed on one must verify on another).
 # Log of this script on the instance:  sudo cat /var/log/flowboard-userdata.log
 # =====================================================================
-REPO_URL="https://github.com/YOUR-GITHUB-USERNAME/flowboard.git"
+REPO_URL="https://github.com/abdulhaseeb-cs/flowboard.git"
 JWT_SECRET="change-me-to-a-long-random-string"     # same value on every instance
 
 set -euxo pipefail
