@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.env
+uploads/
+tests/selenium/reports/
+tests/selenium/screenshots/
+tests/selenium/.venv/
+__pycache__/
+.pytest_cache/
+*.log
+.DS_Store
+Thumbs.db

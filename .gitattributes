@@ -1,0 +1,5 @@
+# Keep Linux line endings even when committing from Windows —
+# shell scripts with CRLF fail on EC2 with "bad interpreter" errors.
+* text=auto eol=lf
+*.png binary
+*.jpg binary

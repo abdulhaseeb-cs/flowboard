@@ -1,0 +1,44 @@
+# =====================================================================
+# Selenium test stack (optional) — browser AND tests run in containers.
+#
+# Test the local stack (on the EC2 instance, after `docker compose up -d`):
+#   docker compose -f docker-compose.yml -f docker-compose.selenium.yml run --rm tests
+#
+# Test the deployed app through the AWS Load Balancer:
+#   BASE_URL=http://<alb-dns-name> docker compose -f docker-compose.yml -f docker-compose.selenium.yml run --rm tests
+#
+# Watch both browsers live: http://<host>:7900  (noVNC, password: secret)
+# =====================================================================
+services:
+  selenium:
+    image: selenium/standalone-chrome:155.0-chromedriver-155.0-grid-4.51.0-20261010
+    container_name: flowboard-selenium
+    shm_size: 2gb                        # Chrome crashes with Docker's default 64 MB /dev/shm
+    environment:
+      SE_NODE_MAX_SESSIONS: 2            # the real-time test drives TWO browsers at once
+      SE_NODE_OVERRIDE_MAX_SESSIONS: "true"
+    ports:
+      - "4444:4444"                      # WebDriver / Grid UI
+      - "7900:7900"                      # noVNC viewer
+    networks: [frontend]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:4444/wd/hub/status | grep -q '\"ready\": *true'"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  tests:
+    build:
+      context: ./tests/selenium
+    image: flowboard-selenium-tests:1.0.0
+    container_name: flowboard-tests
+    environment:
+      BASE_URL: ${BASE_URL:-http://web}            # "web" = nginx service on the shared network
+      SELENIUM_REMOTE_URL: http://selenium:4444/wd/hub
+    volumes:
+      - ./tests/selenium/reports:/tests/reports
+      - ./tests/selenium/screenshots:/tests/screenshots
+    depends_on:
+      selenium:
+        condition: service_healthy
+    networks: [frontend]

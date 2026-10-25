@@ -1,0 +1,165 @@
+# =====================================================================
+# FlowBoard — 6-container stack
+#
+#                 frontend network                 backend network (internal)
+#   :80 ─► [web: nginx] ─┬─► [api #1] ─┬──────────────► [db: postgres]  (pgdata volume)
+#                        └─► [api #2] ─┤──────────────► [redis]         (redisdata volume)
+#                                      └─ uploads volume (shared)  ▲
+#                                      [worker] ───────────────────┘
+#
+#   cp .env.example .env            # then change the secrets
+#   docker compose up -d --build
+#   docker compose ps
+#   docker compose up -d --scale api=3     # more API replicas, Nginx picks them up
+#   docker compose logs -f api worker
+#   docker compose down             # keeps volumes (data survives)
+# =====================================================================
+name: flowboard
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+# Settings shared by the API and the worker (YAML anchor + merge)
+x-app: &app
+  build:
+    context: ./api
+  image: flowboard-api:${APP_VERSION:-1.0.0}
+  env_file: .env
+  environment: &app-env
+    DB_HOST: db
+    DB_PORT: 5432
+    REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+  restart: unless-stopped
+  logging: *default-logging
+
+services:
+  # ------------------------------------------------------------------
+  # Web tier: React build served by Nginx, which also load-balances
+  # /api and /socket.io across every api replica.
+  # ------------------------------------------------------------------
+  web:
+    build:
+      context: ./web
+    image: flowboard-web:${APP_VERSION:-1.0.0}
+    container_name: flowboard-web
+    ports:
+      - "${WEB_PORT:-80}:80"                 # the ONLY published port
+    depends_on:
+      api:
+        condition: service_healthy
+    networks: [frontend]
+    restart: unless-stopped
+    logging: *default-logging
+
+  # ------------------------------------------------------------------
+  # Application tier: stateless REST + WebSocket API, 2 replicas.
+  # (no container_name — replicas need unique generated names)
+  # ------------------------------------------------------------------
+  api:
+    <<: *app
+    deploy:
+      replicas: 2
+      resources:
+        limits:
+          memory: 256M
+    environment:
+      <<: *app-env
+      UPLOAD_DIR: /app/uploads
+    volumes:
+      - uploads:/app/uploads                 # shared by all replicas
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks: [frontend, backend]
+
+  # ------------------------------------------------------------------
+  # Background worker: same image, different command.
+  # ------------------------------------------------------------------
+  worker:
+    <<: *app
+    container_name: flowboard-worker
+    command: ["node", "src/worker.js"]
+    environment:
+      <<: *app-env
+      SERVICE_NAME: worker
+    healthcheck:                             # no HTTP port: check the heartbeat file is fresh
+      test: ["CMD-SHELL", "find /tmp/worker-heartbeat -mmin -2 | grep -q ."]
+      interval: 30s
+      timeout: 3s
+      start_period: 30s
+      retries: 3
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks: [backend]
+    deploy:
+      resources:
+        limits:
+          memory: 192M
+
+  # ------------------------------------------------------------------
+  # Data tier
+  # ------------------------------------------------------------------
+  db:
+    image: postgres:16-alpine
+    container_name: flowboard-db
+    environment:
+      POSTGRES_DB: ${DB_NAME:-flowboard}
+      POSTGRES_USER: ${DB_USER:-flowboard}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d:ro   # schema; runs only on an empty volume
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+    networks: [backend]
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+    logging: *default-logging
+
+  redis:
+    image: redis:7-alpine
+    container_name: flowboard-redis
+    # AOF persistence => presence/rate-limit data survives restarts; password required
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}", "--maxmemory", "128mb", "--maxmemory-policy", "allkeys-lru"]
+    environment:
+      REDISCLI_AUTH: ${REDIS_PASSWORD}
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    networks: [backend]
+    restart: unless-stopped
+    logging: *default-logging
+
+networks:
+  frontend:
+    driver: bridge
+  backend:
+    driver: bridge
+    internal: true          # db/redis/worker have no route to the internet
+
+volumes:
+  pgdata:
+    name: flowboard_pgdata
+  redisdata:
+    name: flowboard_redisdata
+  uploads:
+    name: flowboard_uploads
