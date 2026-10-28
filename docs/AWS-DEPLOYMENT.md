@@ -173,6 +173,7 @@ Delete in this order: **Auto Scaling Group** (terminates its instances) → **Lo
 | ASG keeps replacing instances | Grace period too short — set 900 s so the first build can finish |
 | 502 Bad Gateway from ALB | Containers still starting — `docker compose ps` / `docker compose logs api` |
 | Logged out / "Account no longer exists" | Target-group stickiness is off (see step 5) |
+| Two different browsers don't see each other's workspace | Each browser got its own stickiness cookie and landed on a **different** instance (each has its own DB). Expected with per-instance databases. Demo collaboration on one instance, or use RDS. The Selenium suite copies browser A's `AWSALB` cookie into browser B for exactly this reason |
 | Sidebar says "Reconnecting…" | WebSocket blocked — check the ALB listener is HTTP:80 → target group, and that nothing strips the `Upgrade` header |
 | Build killed / "JavaScript heap out of memory" | Instance too small — use `t3.small`, or check `free -h` shows the swap |
 | `docker: permission denied` as ec2-user | Log out and back in (group membership refresh) or use `sudo` |

@@ -35,7 +35,7 @@ router.get('/', async (_req, res) => {
     }
   } catch { /* stays down */ }
   const ok = checks.database === 'up' && checks.redis === 'up';
-  res.status(ok ? 200 : 503).json({ status: ok ? 'ok' : 'degraded', ...checks, checkMs: Date.now() - t0, ...info() });
+  res.status(ok ? 200 : 503).json({ status: ok ? '200' : 'degraded', ...checks, checkMs: Date.now() - t0, ...info() });
 });
 
 module.exports = router;

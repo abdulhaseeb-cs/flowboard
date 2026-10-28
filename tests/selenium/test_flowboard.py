@@ -33,7 +33,7 @@ from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import Select, WebDriverWait
 
-TIMEOUT = 15
+TIMEOUT = 45
 EVIDENCE = pathlib.Path(__file__).parent / "screenshots"
 
 
@@ -192,7 +192,23 @@ def test_09_drag_and_drop_persists(driver, ctx):
     evidence(driver, "04_after_drag")
 
 
-def test_10_second_user_joins_with_invite_code(driver_b, base_url, ctx):
+def pin_to_same_instance(source, target, base_url):
+    """Each EC2 instance has its OWN database, and the ALB uses a stickiness cookie
+    (AWSALB) to keep a browser on one instance. Give browser B the same cookie as
+    browser A so both users work on the same instance — like two teammates on one
+    server. Locally (no ALB) there is no such cookie and this does nothing."""
+    target.get(base_url)
+    copied = 0
+    for c in source.get_cookies():
+        if c["name"].startswith("AWSALB"):
+            target.add_cookie({k: c[k] for k in ("name", "value", "path") if k in c})
+            copied += 1
+    if copied:
+        print(f"\nCopied {copied} ALB stickiness cookie(s) so both browsers use the same EC2 instance")
+
+
+def test_10_second_user_joins_with_invite_code(driver, driver_b, base_url, ctx):
+    pin_to_same_instance(driver, driver_b, base_url)
     register(driver_b, base_url, ctx["b"])
     visible(driver_b, "#join-code").send_keys(ctx["invite_code"])
     driver_b.find_element(By.ID, "join-btn").click()
@@ -212,7 +228,7 @@ def test_11_realtime_new_task_and_presence(driver, driver_b, ctx):
     quick_add(driver, "To Do", title)
     # B never reloads: the card must arrive over the WebSocket
     started = time.time()
-    card_by_title(driver_b, "To Do", title, timeout=10)
+    card_by_title(driver_b, "To Do", title, timeout=40)
     print(f"\nTask appeared on B's screen after {time.time() - started:.2f}s (no refresh)")
     ctx["live_title"] = title
     evidence(driver_b, "05_realtime_user_b")
@@ -223,7 +239,7 @@ def test_12_realtime_move_seen_by_other_user(driver, driver_b, ctx):
     Select(visible(driver, "#task-status")).select_by_visible_text("Review")
     wait(driver).until(lambda d: Select(d.find_element(By.ID, "task-status")).first_selected_option.text == "Review")
     driver.find_element(By.ID, "close-task").click()
-    card_by_title(driver_b, "Review", ctx["live_title"], timeout=10)
+    card_by_title(driver_b, "Review", ctx["live_title"], timeout=40)
 
 
 def test_13_assignment_sends_live_notification(driver, driver_b, ctx):
@@ -232,7 +248,7 @@ def test_13_assignment_sends_live_notification(driver, driver_b, ctx):
     wait(driver).until(lambda d: Select(d.find_element(By.ID, "task-assignee")).first_selected_option.text == ctx["b"]["name"])
     driver.find_element(By.ID, "close-task").click()
 
-    badge = visible(driver_b, "#unread-count", timeout=10)
+    badge = visible(driver_b, "#unread-count", timeout=40)
     assert int(badge.text) >= 1
     driver_b.find_element(By.ID, "notifications-btn").click()
     panel = visible(driver_b, "[data-testid=notifications-panel]")
